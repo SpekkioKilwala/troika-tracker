@@ -38,7 +38,7 @@
 # quit: quits the program. Asks for confirmation.
 
 # Path should be:
-# C:\Users\jonmw\PycharmProjects\TroikaTracker\TroikaTest.txt
+# C:\Users\jonmw\PycharmProjects\troika-tracker\TroikaTest.txt
 
 from collections import Counter
 import random
