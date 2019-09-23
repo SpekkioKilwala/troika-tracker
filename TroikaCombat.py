@@ -41,10 +41,8 @@
 # Kill function. E.g. "kill dragon" will remove exactly 8 tokens from a 24-token 3-dragon fight for NEXT round.
 # That obviously also will complexify the token data.
 
-# Todo: Save function checks for anything on the table and maybe includes that in the save.
-# Todo: the kill method. You bank removals for later. Any ideas for ease for tokens/enemy?
-# Todo: Fix the remove method so that it overflows onto table contents.
 # Todo: Make it so that the load() function doesn't replicate code from other functions e.g. colouring and report.
+# Todo: Clean up warts: PEP8 or at least a consistent style; rename junk variables appropriately e.g. use _.
 
 from collections import Counter
 import random
@@ -57,6 +55,7 @@ class Bag:
         self.contents = Counter()  # It counts things. It's a counter.
         print("Creating a new bag...")
         self.table = Counter()  # See above
+        self.nextRoundRemovals = Counter()  # It gets reported on so it needs to be declared very early
         self.colour_lookup = {}
         self.turnOrder = []
         # First problem: the script working directory shouldn't really be bag-specific.
@@ -87,7 +86,13 @@ class Bag:
             print("Absolutely nothing!")
         else:
             for k, v in self.table.items():
-                print("{}: {}".format(k, v))
+                print(fg(*self.colour_lookup[k]) + "{}x {}".format(v, k) + fg.rs)
+        print("\nNext round will be cleared out:")
+        if len(self.nextRoundRemovals) == 0:
+            print("Absolutely nothing!")
+        else:
+            for k, v in self.nextRoundRemovals.items():
+                print(fg(*self.colour_lookup[k]) + "{}x {}".format(v, k) + fg.rs)
 
     def add(self, c_split):
         try:
@@ -112,6 +117,8 @@ class Bag:
         self.report()
 
     def remove(self, c_split):
+        # This is set to prioritise removing things from the BAG FIRST.
+        # It is for changing the initiative OUTSIDE combat or for correcting errors, not during combat!
         try:
             if c_split[-1].isnumeric():  # Remember the last element is taken as a QUANTITY if it is numeric
                 assert len(c_split) > 1  # Ensure we'll still have something usable as a name after removing that
@@ -119,11 +126,16 @@ class Bag:
                 assert len(c_split) > 0  # We must have a nonzero amount of instruction to act on
             order = self.extract_counter(c_split, default=1000)
             possible_removals = self.contents & order
+            possible_table_removals = (order - possible_removals) & self.table
             for k, v in possible_removals.items():
                 # At the moment each order can only give one key-value pair.
                 # Seems weird to do this in a for loop but I don't know how to do it otherwise.
                 print(fg(*self.colour_lookup[k]) + "Removing tokens from the bag: {}x {}".format(v, k) + fg.rs)
             self.contents -= possible_removals
+            for k, v in possible_table_removals.items():
+                # Second verse, same as the first
+                print(fg(*self.colour_lookup[k]) + "Removing tokens from the table: {}x {}".format(v, k) + fg.rs)
+            self.table -= possible_table_removals
         except Exception as e:
             print("Removing token failed!" + str(e))
             print("Required format: add [token name] [amount to take, default 1000]")
@@ -145,9 +157,23 @@ class Bag:
             print("Can't pull anything; the bag is empty!")
         pass
 
+    def kill(self, c_split):
+        try:
+            if c_split[-1].isnumeric():  # Remember the last element is taken as a QUANTITY if it is numeric
+                assert len(c_split) > 1  # Ensure we'll still have something usable as a name after removing that
+            else:
+                assert len(c_split) > 0  # We must have a nonzero amount of instruction to act on
+            order = self.extract_counter(c_split, default=1000)
+            self.nextRoundRemovals += order
+        except Exception as e:
+            print("That cannot be killed." + str(e))
+
     def next(self):
         self.contents += self.table
         self.table.clear()
+        print("Clearing out the deads...")
+        self.contents -= self.nextRoundRemovals
+        self.nextRoundRemovals.clear()
         print("Starting a new round!")
         self.report()
         self.turnOrder.append("NEW ROUND BEGINS")
@@ -194,7 +220,18 @@ class Bag:
         # If there is stuff on the table, the user is warned, and asked if they want those items included.
         # Also, the end-of-round token is NOT included in the save.
         # When a name is given, check to see if such a file already exists; if it does, ask if you want to overwrite.
-        saveData = dict(self.contents - Counter({"End of round": 1}))
+        if len(self.table) > 0:
+            print("There are tokens on the table:")
+            for k, v in self.table.items():
+                print(fg(*self.colour_lookup[k]) + "{}x {}".format(v, k) + fg.rs)
+            comprehensive = input("Include those in the save? y for yes.]> ")
+            if comprehensive.lower() != 'y':
+                # EXCLUDE the table from the data
+                saveData = dict(self.contents - Counter({"End of round": 1}))
+            else:
+                saveData = dict((self.contents + self.table) - Counter({"End of round": 1}))
+        else:
+            saveData = dict(self.contents - Counter({"End of round": 1}))
         folderContents = self.list_files()
         print("Existing YAML files in the local folder:")
         for i, v in enumerate(folderContents):
@@ -258,12 +295,12 @@ class Bag:
 
 # PROGRAM START
 print("\nThis is an initiative-managing program for Troika!")
-print("Troika!'s initiaive system involves having a lot of tokens in a bag and drawing them out one at a time.")
+print("Troika!'s initiative system involves having a lot of tokens in a bag and drawing them out one at a time.")
 print("Whoever's token gets pulled out gets to take a turn. If the End of Round token is pulled, refill the bag.")
 print("Heroes get 2 tokens each. Hirelings get 1 each. Monsters range from 1 to 8.")
 random.seed()
 baglist = []
-valid_commands = ['help', 'quit', 'add', 'remove', 'pull', 'check', 'next', 'turns', '', 'save', 'load']
+valid_commands = ['help', 'quit', 'add', 'remove', 'pull', 'check', 'next', 'turns', '', 'save', 'load', 'kill']
 
 while True:
     if len(baglist) == 0:
@@ -288,6 +325,8 @@ while True:
             b.add(c_split[1:])
         if action == 'remove':
             b.remove(c_split[1:])
+        if action == 'kill':
+            b.kill(c_split[1:])
         if (action == 'pull') or (action == ''):
             b.pull()
         if action == 'check':
