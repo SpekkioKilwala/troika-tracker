@@ -2,8 +2,7 @@
 
 # A description of what operation looks like and what the program is internally doing.
 # User (the GM) starts the program by dragging the PC list onto it.
-#   That's just a list of names and initiative counts each - usually 2.
-# Creates the TABLE. It's a list of everything pulled out of the bag, in order.
+#   That's just a list of names and initiative counts each (often 2), separated by commas.
 # "Main" loop begins.
 # Check for bags: No bags: create new bag: preload with contents of PC list file and an end-of-round-token.
 #   If no file was given, the bag will have just an end-of-round token.
@@ -37,24 +36,47 @@
 # next: next round. Puts all tabled tokens back in the bag, minus killed ones.
 # quit: quits the program. Asks for confirmation.
 
-# Path should be:
-# C:\Users\jonmw\PycharmProjects\troika-tracker\TroikaTest.txt
+# WARNING: RAMBLE ZONE
+
+# Dragging files is a neat trick but Pycharm doesn't play nice with it; I'll do something else entirely.
+# But I definitely want to have a method of loading things from file fast!
+# Therefore I need to make decisions on what EXACTLY these saved-files actually contain.
+# There's no point pretending that a file of "Dragon 8" is user-friendly if it's just as finicky as any alternatives.
+# An actual YAML structure that straight-up describes the actual dicts you want is just fine.
+# That's also easier to extend later if I want my save-files to cover extra stuff like colours or kill-amounts.
+
+# I've got FOUR WAYS that a token may get into the bag.
+# 1. The user types it in; "add bob the spider 8". The instruction is broken up, checked for validity, and used.
+# 2. The special "End of Round" token added at the beginning. A hard-coded special case of the manual input.
+# 3. Loading formatted data from a YAML file. Very little overlap with the 2nd way.
+# 4. Adding tokens currently on the table back into the bag. Not a source of NEW tokens.
+
+# The more I look at this the more I feel like the load-from-file method has very little overlap with the manual add.
+# Therefore, they should remain entirely separate methods.
+# Also, I can't load crap until I have a file to load from, so I'll start with the functions for SAVING those.
+
+# Todo:
+# Todo: the kill method. You bank removals for later. Any ideas for ease for tokens/enemy?
+# Todo: Make it so that the load() function doesn't replicate code from other functions e.g. colouring and report.
 
 from collections import Counter
 import random
-import sys
+import sys, os
 from sty import fg, bg, ef, rs
+import yaml
 
 class Bag:
     def __init__(self):
-        # Todo: find a way to add tokens to the bag, from a premade file, AFTER you start.
-        # Todo: the kill method. You bank removals for later. Any ideas for ease for tokens/enemy?
         self.contents = Counter()  # It counts things. It's a counter.
         print("Creating a new bag...")
         self.table = Counter()  # See above
         self.colour_lookup = {}
         self.turnOrder = []
+        # First problem: the script working directory shouldn't really be bag-specific.
+        # Second problem: the YAML code doesn't necessarily save to the location of the script in any case!
+        self.workingDir = os.path.dirname(os.path.realpath(sys.argv[0]))
         self.add(['End of Round', '1'])
+        # Should I remove this? It's not breaking anything.
         try:
             preload_path = sys.argv[1]
             with open(preload_path) as f:
@@ -144,6 +166,73 @@ class Bag:
         self.turnOrder.append("NEW ROUND BEGINS")
         pass
 
+    def load(self):
+        # Looks in the local folder for yaml files, lists them, attempts to load the one the user specifies.
+        # Load it into a temporary holder. Check to see that it's actually a dict where each item is valid.
+        # If it passes muster, display the dict nicely to the user, with colour.
+        # If the user agrees that that is what they want, put it into the main bag and clear the holder.
+        folderContents = self.list_files()
+        print("Existing YAML files in the local folder:")
+        for i, v in enumerate(folderContents):
+            print("[{}] {}".format(i, v))
+        selection = input("Load which file? Input only the index number.")
+        try:
+            assert selection.isnumeric()
+            with open(folderContents[int(selection)], 'r') as f:
+                tempHolder = yaml.load(f, Loader=yaml.FullLoader)
+            assert isinstance(tempHolder, dict)
+            print("\nLoaded data:")
+            if len(tempHolder) == 0:
+                print("Absolutely nothing!")
+            else:
+                for k, v in tempHolder.items():
+                    if k not in self.colour_lookup.keys():
+                        self.colour_lookup[k] = self.colourise(k)
+                    else:
+                        pass
+                    print(fg(*self.colour_lookup[k]) + "{}x {}".format(v, k) + fg.rs)
+            decision = input("OK to put into the bag? y to commit.]> ").lower()
+            if decision == 'y':
+                self.contents += Counter(tempHolder)
+                print("Loading complete!")
+                self.report()
+            else:
+                print("Loading cancelled, returning to main menu...")
+        except Exception as e:
+            print("Loading failed! ", e)
+        pass
+
+    def save(self):
+        # Saves the bag's contents, in DICT form, to a new YAML file which the user names.
+        # If there is stuff on the table, the user is warned, and asked if they want those items included.
+        # Also, the end-of-round token is NOT included in the save.
+        # When a name is given, check to see if such a file already exists; if it does, ask if you want to overwrite.
+        saveData = dict(self.contents - Counter({"End of round": 1}))
+        folderContents = self.list_files()
+        print("Existing YAML files in the local folder:")
+        for i, v in enumerate(folderContents):
+            print("[{}] {}".format(i, v))
+        appellation = input("Save under what name? The .yaml suffix will be appended automatically.]> ")
+        try:
+            assert appellation.isalnum()  # No weird characters thanks
+            assert len(appellation) > 0  # And we do need a nonzero name
+            saveloc = ''.join([appellation, '.yaml'])
+            if saveloc in folderContents:
+                overwrite = input(
+                    "WARNING! File already exists with that name! Input 'y' to overwrite.]> ").lower() == 'y'
+                assert overwrite
+                print("Overwriting file...")
+            with open(saveloc, 'w') as f:
+                yaml.dump(saveData, f)
+        except Exception as e:
+            print("Saving cancelled! ", e)
+        return None
+
+    def list_files(self):
+        fileFilter = lambda x: (x[-5:].lower()==".yaml" or x[-4:].lower()==".yml")
+        folderContents = [file for file in os.listdir(self.workingDir) if fileFilter(file)]
+        return folderContents
+
     def turns(self):
         for i, v in enumerate(self.turnOrder):
             print("{}: {}".format(i, v))
@@ -187,8 +276,7 @@ print("Whoever's token gets pulled out gets to take a turn. If the End of Round 
 print("Heroes get 2 tokens each. Hirelings get 1 each. Monsters range from 1 to 8.")
 random.seed()
 baglist = []
-valid_commands = ['help', 'quit', 'add', 'remove', 'pull', 'check', 'next', 'turns', '']
-# see if we got initialised with a data file
+valid_commands = ['help', 'quit', 'add', 'remove', 'pull', 'check', 'next', 'turns', '', 'save', 'load']
 
 while True:
     if len(baglist) == 0:
@@ -221,6 +309,10 @@ while True:
             b.next()
         if action == 'turns':
             b.turns()
+        if action == 'save':
+            b.save()
+        if action == 'load':
+            b.load()
     except Exception as e:
         print("Invalid input!" + str(e))
         print("Valid commands:", ', '.join(valid_commands))
