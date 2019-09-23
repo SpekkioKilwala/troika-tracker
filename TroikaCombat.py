@@ -49,13 +49,12 @@ class Bag:
     def __init__(self):
         # Todo: find a way to add tokens to the bag, from a premade file, AFTER you start.
         # Todo: the kill method. You bank removals for later. Any ideas for ease for tokens/enemy?
-        # Todo: GUI this shit up. That's gotta be nicer to use.
         self.contents = Counter()  # It counts things. It's a counter.
         print("Creating a new bag...")
         self.table = Counter()  # See above
         self.colour_lookup = {}
         self.turnOrder = []
-        self.add(['add', 'End of Round', '1'])
+        self.add(['End of Round', '1'])
         try:
             preload_path = sys.argv[1]
             with open(preload_path) as f:
@@ -82,19 +81,21 @@ class Bag:
                 print("{}: {}".format(k, v))
 
     def add(self, c_split):
-        order = self.extract_counter(c_split)
         try:
+            if c_split[-1].isnumeric():  # Remember the last element is taken as a QUANTITY if it is numeric
+                assert len(c_split) > 1  # Ensure we'll still have something usable as a name after removing that
+            else:
+                assert len(c_split) > 0  # We must have a nonzero amount of instruction to act on
+            order = self.extract_counter(c_split, default=2)
             for k, v in order.items():
                 # This might be a new token: check if it's got an associated colour.
                 if k not in self.colour_lookup.keys():
                     self.colour_lookup[k] = self.colourise(k)
                 else:
                     pass
-
                 # At the moment each order can only give one key-value pair.
                 # Seems weird to do this in a for loop but I don't know how to do it otherwise.
                 print(fg(*self.colour_lookup[k]) + "Tokens going into the bag: {}x {}".format(v, k) + fg.rs)
-
             self.contents += order
         except Exception as e:
             print("Adding token failed!" + str(e))
@@ -102,8 +103,12 @@ class Bag:
         self.report()
 
     def remove(self, c_split):
-        order = self.extract_counter(c_split)
         try:
+            if c_split[-1].isnumeric():  # Remember the last element is taken as a QUANTITY if it is numeric
+                assert len(c_split) > 1  # Ensure we'll still have something usable as a name after removing that
+            else:
+                assert len(c_split) > 0  # We must have a nonzero amount of instruction to act on
+            order = self.extract_counter(c_split, default=1000)
             possible_removals = self.contents & order
             for k, v in possible_removals.items():
                 # At the moment each order can only give one key-value pair.
@@ -143,19 +148,19 @@ class Bag:
         for i, v in enumerate(self.turnOrder):
             print("{}: {}".format(i, v))
 
-    def extract_counter(self, command):
+    def extract_counter(self, command, default=2):
+        # This is the single-line split-text-to-Counter parser.
+        # Takes a Command (a subset of what the user typed in) which HAS been checked for basic correct structure.
+        # i.e. we should already be sure that we have a LIST of STRINGS with at least ONE ELEMENT.
+        # Converts that information to Counter form (following a given default for missing information) and returns it.
+        # It has no comprehension of the context of what the counter will actually be used for.
+        # It has no idea where the request came from; it leaves the problem of making an appropriate guess to others.
         try:
             if command[-1].isdigit():
                 num_tokens = int(command.pop())  # valid command received
-            elif command[0] == "add":
-                # the default amount for add is 1
-                num_tokens = 1
-            elif command[0] == "remove":
-                num_tokens = 1000
             else:
-                num_tokens = 1  # Setting a default here for every other case
-                # Because I don't HAVE any other instructions that should need this yet.
-            name_token = " ".join([word.capitalize() for word in command[1:]])
+                num_tokens = default
+            name_token = " ".join([word.capitalize() for word in command])
             return Counter({name_token: num_tokens})
         except Exception as e:
             print("Malformed command!" + str(e))
@@ -180,7 +185,7 @@ print("\nThis is an initiative-managing program for Troika!")
 print("Troika!'s initiaive system involves having a lot of tokens in a bag and drawing them out one at a time.")
 print("Whoever's token gets pulled out gets to take a turn. If the End of Round token is pulled, refill the bag.")
 print("Heroes get 2 tokens each. Hirelings get 1 each. Monsters range from 1 to 8.")
-random.seed(a=123)
+random.seed()
 baglist = []
 valid_commands = ['help', 'quit', 'add', 'remove', 'pull', 'check', 'next', 'turns', '']
 # see if we got initialised with a data file
@@ -205,9 +210,9 @@ while True:
             print("Quitting... ")
             break
         if action == 'add':
-            b.add(c_split)
+            b.add(c_split[1:])
         if action == 'remove':
-            b.remove(c_split)
+            b.remove(c_split[1:])
         if (action == 'pull') or (action == ''):
             b.pull()
         if action == 'check':
