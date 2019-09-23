@@ -1,62 +1,49 @@
 # This is a tool for tracking combat initiative for the the RPG system "Troika!"
 
-# A description of what operation looks like and what the program is internally doing.
-# User (the GM) starts the program by dragging the PC list onto it.
-#   That's just a list of names and initiative counts each (often 2), separated by commas.
+# A description of what example operation looks like and what the program is internally doing.
+# User (the GM) can start the script by dragging a text file onto it (FEATURE DEPRECATED; STILL WORKS BUT NOT STANDARD)
+#   That's just a list of names and initiative counts each (often 2), no commas, in a .txt.
+#   The new recommended method is to follow a YAML structure and the "save" and "load" commands.
 # "Main" loop begins.
 # Check for bags: No bags: create new bag: preload with contents of PC list file and an end-of-round-token.
 #   If no file was given, the bag will have just an end-of-round token.
-# It declares what was done.
+# It declares what was done and displays the state of the bag.
 # Ends loop by declaring what's in the current active bag and prompts the user for input.
 # 1x loop: User populates the bag with enemies. E.g. add 20 Goblin
 # 1x loop each: User pulls tokens from the bag one at a time.
-# 1x loop each: User kills dead actors. These tokens are removed when the next round would begin.
+# 1x loop each: User kills dead actors. These tokens are removed when the next round would begin. NOT YET IMPLEMENTED!
 # The end of round token is pulled just like any other.
 # Eventually, user says "next", the bag is refilled, minus tokens from killed creatures.
 
 # Bits of flair: It prints in colour. It assigns an essentially-random but deterministic colour to each token by name.
-# The PC list file is formatted as follows:
-# 2 Curly
-# 2 Larry
-# 2 Moe
-# 3 Alacritous Steve
-# 1 Boblin the Goblin
-# 8 The Invisible Dragon That The Party Doesn't Know Is Following Them
-# You CAN modify this file without restarting the program and it WILL take changes into account for the next bag.
+# A sample preload YAML file is given as follows.
+# Curly: 2
+# Larry: 2
+# Moe: 2
+# Alacritous Steve: 3
+# Boblin the Goblin: 1
+# The Invisible Dragon That The Party Doesn't Know Is Following Them: 8
 
 # Valid inputs!
 # help: display all valid commands and the syntax for each. It just displays everything, no specificity.
-# add [number] [name]: adds X tokens to the bag, under the given name e.g. "Goblin", "Flood".
-# a: shorthand for add
-# remove [number] [name]: removes X of the specified token from the BAG first, then the table: for fixing errors!
-# kill [number] [name]: makes a note to remove that many tokens AFTER repopulating
-# k: shorthand for kill
+# add [name] [number (optional)]: adds X tokens to the bag, under the given name e.g. "Goblin", "Flood".
+# remove [number] [name]: removes X of the specified token from the BAG only.
 # pull: remove a random token from the bag, state it clearly, and put it on the table.
 # '': shorthand for pull
 # next: next round. Puts all tabled tokens back in the bag, minus killed ones.
 # quit: quits the program. Asks for confirmation.
+# load: load a yaml file
+# save: save to a yaml file
+# check: reports on bag contents
 
-# WARNING: RAMBLE ZONE
+# Features coming!
+# Rerolling a token's colour, and preserving those changes. Complexifies token data.
+# Kill function. E.g. "kill dragon" will remove exactly 8 tokens from a 24-token 3-dragon fight for NEXT round.
+# That obviously also will complexify the token data.
 
-# Dragging files is a neat trick but Pycharm doesn't play nice with it; I'll do something else entirely.
-# But I definitely want to have a method of loading things from file fast!
-# Therefore I need to make decisions on what EXACTLY these saved-files actually contain.
-# There's no point pretending that a file of "Dragon 8" is user-friendly if it's just as finicky as any alternatives.
-# An actual YAML structure that straight-up describes the actual dicts you want is just fine.
-# That's also easier to extend later if I want my save-files to cover extra stuff like colours or kill-amounts.
-
-# I've got FOUR WAYS that a token may get into the bag.
-# 1. The user types it in; "add bob the spider 8". The instruction is broken up, checked for validity, and used.
-# 2. The special "End of Round" token added at the beginning. A hard-coded special case of the manual input.
-# 3. Loading formatted data from a YAML file. Very little overlap with the 2nd way.
-# 4. Adding tokens currently on the table back into the bag. Not a source of NEW tokens.
-
-# The more I look at this the more I feel like the load-from-file method has very little overlap with the manual add.
-# Therefore, they should remain entirely separate methods.
-# Also, I can't load crap until I have a file to load from, so I'll start with the functions for SAVING those.
-
-# Todo:
+# Todo: Save function checks for anything on the table and maybe includes that in the save.
 # Todo: the kill method. You bank removals for later. Any ideas for ease for tokens/enemy?
+# Todo: Fix the remove method so that it overflows onto table contents.
 # Todo: Make it so that the load() function doesn't replicate code from other functions e.g. colouring and report.
 
 from collections import Counter
@@ -175,7 +162,7 @@ class Bag:
         print("Existing YAML files in the local folder:")
         for i, v in enumerate(folderContents):
             print("[{}] {}".format(i, v))
-        selection = input("Load which file? Input only the index number.")
+        selection = input("Load which file? Input only the index number.]> ")
         try:
             assert selection.isnumeric()
             with open(folderContents[int(selection)], 'r') as f:
@@ -261,7 +248,7 @@ class Bag:
         random.seed(a=token_name)
         while True:
             clr = [random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)]
-            if (clr[0] * 3 // 4 + clr[1] + clr[2] // 2) > 230:
+            if (clr[0] * 3 // 4 + clr[1] + clr[2] // 2) > 235:
                 break
             else:
                 pass
